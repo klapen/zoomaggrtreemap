@@ -8,6 +8,18 @@ var zoomAggrTreemap = {
 	    width:width,
 	    height: height,
 	    formatNumber: d3.format(",d"),
+	    color: function(d){
+		function getRootColor(node){
+		    if (node.color){
+			return node.color;
+		    }else if(node.parent && node.parent.depth != 0){
+			return getRootColor(node.parent);
+		    }else{
+			return d3.scale.category10()(node.name);
+		    }
+		}
+		return d.color ? d.color : getRootColor(d);
+	    },
 	    transitioning: undefined,
 	    x: d3.scale.linear().domain([0, width]).range([0, width]),
 	    y: d3.scale.linear().domain([0, height]).range([0, height]),
@@ -100,15 +112,17 @@ var zoomAggrTreemap = {
 		g.filter(function(d) { return d._children; })
 		    .classed("children", true)
 		    .on("click", transition);
-
+		
 		g.selectAll(".child")
 		    .data(function(d) { return d._children || [d]; })
 		    .enter().append("rect")
+		    .style('fill', function(d) { return graph.color(d); })
 		    .attr("class", "child")
 		    .call(rect);
 
 		g.append("rect")
 		    .attr("class", "parent")
+		    .style('fill', function(d) { return graph.color(d); })
 		    .call(rect)
 		    .append("title")
 		    .text(function(d) { return graph.formatNumber(d.value); });
