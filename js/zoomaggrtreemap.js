@@ -1,24 +1,31 @@
+var util ={
+    widthCalc: function (id){
+	return document.getElementById(id).parentElement.clientWidth
+    }
+}
+
 var zoomAggrTreemap = {
     generate: function (url,id){
-	var margin = {top: 20, right: 0, bottom: 0, left: 0},
-	    width= 960,
-	    height= 500 - margin.top - margin.bottom;
+	var margin = {top: 20, right: 0, bottom: 0, left: 0};
+	var width = util.widthCalc('chart-parent')-30;
+	var height = width*1.036 - margin.top - margin.bottom;
+	
 	var graph = {
+	    url: url,
+	    id:id,
 	    margin: margin,
-	    width:width,
-	    height: height,
+	    width:undefined,
+	    height:undefined,
 	    formatNumber: d3.format(",d"),
+	    colorScale: d3.scale.category20(),
 	    color: function(d){
-		function getRootColor(node){
-		    if (node.color){
-			return node.color;
-		    }else if(node.parent && node.parent.depth != 0){
-			return getRootColor(node.parent);
-		    }else{
-			return d3.scale.category10()(node.name);
-		    }
+		if (d.color){
+		    return d.color;
+		}else if(d.parent && d.parent.depth != 0){
+		    return this.color(d.parent);
+		}else{
+		    return this.colorScale(d.name);
 		}
-		return d.color ? d.color : getRootColor(d);
 	    },
 	    transitioning: undefined,
 	    x: d3.scale.linear().domain([0, width]).range([0, width]),
@@ -26,8 +33,8 @@ var zoomAggrTreemap = {
 	    treemap: d3.layout.treemap()
 		.children(function(d, depth) { return depth ? null : d._children; })
 		.sort(function(a, b) { return a.value - b.value; })
-		.ratio(height / width * 0.5 * (1 + Math.sqrt(5)))
-		.round(false),
+		.round(false)
+		.ratio(height / width * 0.5 * (1 + Math.sqrt(5))),
 	    svg: d3.select(id).append("svg")
 		.attr("width", width + margin.left + margin.right)
 		.attr("height", height + margin.bottom + margin.top)
@@ -36,53 +43,62 @@ var zoomAggrTreemap = {
 		.append("g")
 		.attr("transform", "translate(" + margin.left + "," + margin.top + ")")
 		.style("shape-rendering", "crispEdges"),
-	    grandparent: undefined
-	    
+	    grandparent: undefined,
+	    name: function(d) {
+		return d.parent? this.name(d.parent) + "." + d.name : d.name;
+	    }
 	};
-	graph.grandparent = graph.svg.append("g").attr("class", "grandparent");
-	graph.grandparent.append("rect")
-	    .attr("y", -margin.top)
-	    .attr("width", width)
-	    .attr("height", margin.top);
+	function init(){
+	    graph.width = width;
+	    graph.height = height;
 
-	graph.grandparent.append("text")
-	    .attr("x", 6)
-	    .attr("y", 6 - margin.top)
-	    .attr("dy", ".75em");
+	    //Set scales
+	    
+	    
+	    graph.grandparent = graph.svg.append("g").attr("class", "grandparent");
+	    graph.grandparent.append("rect")
+		.attr("y", -margin.top)
+		.attr("width", graph.width)
+		.attr("height", margin.top);
+	    
+	    graph.grandparent.append("text")
+		.attr("x", 6)
+		.attr("y", 6 - margin.top)
+		.attr("dy", ".75em");
+	}
+	init();
 
 	d3.json(url, function(root) {
-	    initialize(root);
-	    accumulate(root);
-	    layout(root);
+	    data_init(root);
 	    display(root);
 
-	    function initialize(root) {
+	    function data_init(root) {
 		root.x = root.y = 0;
 		root.dx = width;
 		root.dy = height;
 		root.depth = 0;
-	    }
 
-	    // Aggregate the values for internal nodes. This is normally done by the
-	    // treemap layout, but not here because of our custom implementation.
-	    // We also take a snapshot of the original children (_children) to avoid
-	    // the children being overwritten when when layout is computed.
-	    function accumulate(d) {
-		return (d._children = d.children)
-		    ? d.value = d.children.reduce(function(p, v) { return p + accumulate(v); }, 0)
-		: d.value;
-	    }
+		// Aggregate the values for internal nodes. This is normally done by the
+		// treemap layout, but not here because of our custom implementation.
+		// We also take a snapshot of the original children (_children) to avoid
+ 		// the children being overwritten when when layout is computed.
+		function accumulate(d) {
+		    return (d._children = d.children)
+			? d.value = d.children.reduce(function(p, v) { return p + accumulate(v); }, 0)
+		    : d.value;
+		}
+		accumulate(root);
 
-	    // Compute the treemap layout recursively such that each group of siblings
-	    // uses the same size (1×1) rather than the dimensions of the parent cell.
-	    // This optimizes the layout for the current zoom state. Note that a wrapper
-	    // object is created for the parent node for each group of siblings so that
-	    // the parent’s dimensions are not discarded as we recurse. Since each group
-	    // of sibling was laid out in 1×1, we must rescale to fit using absolute
-	    // coordinates. This lets us use a viewport to zoom.
-	    function layout(d) {
-		if (d._children) {
-		    graph.treemap.nodes({_children: d._children});
+		// Compute the treemap layout recursively such that each group of siblings
+		// uses the same size (1×1) rather than the dimensions of the parent cell.
+		// This optimizes the layout for the current zoom state. Note that a wrapper
+		// object is created for the parent node for each group of siblings so that
+		// the parent’s dimensions are not discarded as we recurse. Since each group
+		// of sibling was laid out in 1×1, we must rescale to fit using absolute
+		// coordinates. This lets us use a viewport to zoom.
+		function layout(d) {
+		    if (d._children) {
+			graph.treemap.nodes({_children: d._children});
 		    d._children.forEach(function(c) {
 			c.x = d.x + c.x * d.dx;
 			c.y = d.y + c.y * d.dy;
@@ -91,7 +107,9 @@ var zoomAggrTreemap = {
 			c.parent = d;
 			layout(c);
 		    });
+		    }
 		}
+		layout(root);
 	    }
 
 	    function display(d) {
@@ -99,7 +117,7 @@ var zoomAggrTreemap = {
 		    .datum(d.parent)
 		    .on("click", transition)
 		    .select("text")
-		    .text(name(d));
+		    .text(graph.name(d));
 
 		var g1 = graph.svg.insert("g", ".grandparent")
 		    .datum(d)
@@ -167,7 +185,6 @@ var zoomAggrTreemap = {
 		}
 		return g;
 	    }
-
 	    
 	    function text(text) {
 		text.attr("x", function(d) { return graph.x(d.x) + 6; })
@@ -180,19 +197,12 @@ var zoomAggrTreemap = {
 		    .attr("width", function(d) { return graph.x(d.x + d.dx) - graph.x(d.x); })
 		    .attr("height", function(d) { return graph.y(d.y + d.dy) - graph.y(d.y); });
 	    }
-	    
-	    function name(d) {
-		return d.parent
-		    ? name(d.parent) + "." + d.name
-		    : d.name;
-	    }
 	});
 
 	return graph;
     }
 };
-var oas;
+
 document.addEventListener("DOMContentLoaded", function(event){
     var tree = zoomAggrTreemap.generate('json/data.json','#chart');
-    oas = tree;
 });
